@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0f172a" />
+    <meta name="description" content="Escanea códigos QR y de barras con cámara o archivo" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+    <title>Conserje - Escáner de códigos</title>
+  </head>
+  <body>
+    <div id="app">
+      <header>
+        <h1>Conserje</h1>
+        <p class="subtitle">Escáner de códigos QR y barras</p>
+      </header>
+
+      <main>
+        <div class="mode-selector">
+          <button id="btn-camera" class="mode-btn active" type="button">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+            Cámara
+          </button>
+          <button id="btn-file" class="mode-btn" type="button">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+            Archivo
+          </button>
+        </div>
+
+        <div id="scanner-area" class="scanner-area">
+          <div id="camera-container" class="camera-container">
+            <div id="camera-placeholder" class="camera-placeholder">
+              <svg width="64" height="64" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4">
+                <rect x="3" y="3" width="7" height="7"/>
+                <rect x="14" y="3" width="7" height="7"/>
+                <rect x="3" y="14" width="7" height="7"/>
+                <rect x="14" y="14" width="4" height="4"/>
+                <line x1="21" y1="14" x2="21" y2="21"/>
+                <line x1="14" y1="21" x2="21" y2="21"/>
+              </svg>
+              <p>Presiona para iniciar la cámara</p>
+              <button id="btn-start-camera" class="btn-primary" type="button">Iniciar cámara</button>
+            </div>
+            <div id="reader" class="reader"></div>
+          </div>
+
+          <div id="file-container" class="file-container hidden">
+            <label for="file-input" class="file-drop-zone" id="drop-zone">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.4">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                <circle cx="8.5" cy="8.5" r="1.5"/>
+                <polyline points="21 15 16 10 5 21"/>
+              </svg>
+              <p>Arrastra una imagen aquí o haz clic para seleccionar</p>
+              <span class="file-hint">PNG, JPG, WEBP</span>
+            </label>
+            <input type="file" id="file-input" accept="image/*" hidden />
+            <div id="file-preview" class="file-preview hidden">
+              <img id="preview-img" alt="Vista previa" />
+            </div>
+          </div>
+        </div>
+
+        <div id="result-section" class="result-section hidden">
+          <h2>Resultado <span id="result-format" class="format-badge hidden"></span></h2>
+          <div class="result-card">
+            <p id="result-text" class="result-text"></p>
+            <div class="result-actions">
+              <button id="btn-copy" class="btn-action" type="button">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                </svg>
+                Copiar
+              </button>
+              <button id="btn-open" class="btn-action hidden" type="button">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                  <polyline points="15 3 21 3 21 9"/>
+                  <line x1="10" y1="14" x2="21" y2="3"/>
+                </svg>
+                Abrir enlace
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+
+      <footer>
+        <p>Conserje &copy; 2026</p>
+      </footer>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
