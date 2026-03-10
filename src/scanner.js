@@ -122,28 +122,76 @@ async function tryZxingWithErrors(imageData) {
 }
 
 export async function scanFromFile(file, onProgress) {
-  const img = await loadImage(file);
+  const log = [];
+  const t0 = performance.now();
+  const ts = () => `${(performance.now() - t0).toFixed(0)}ms`;
+
+  log.push(`[${ts()}] Archivo: ${file.name} (${file.type}, ${(file.size / 1024).toFixed(1)} KB)`);
+
+  let img;
+  try {
+    img = await loadImage(file);
+    log.push(`[${ts()}] Imagen cargada: ${img.naturalWidth}x${img.naturalHeight}`);
+  } catch (err) {
+    log.push(`[${ts()}] ERROR cargando imagen: ${err.message}`);
+    alert("DEBUG LOG:\n\n" + log.join("\n"));
+    throw err;
+  }
+
   const scales = [1, 2, 3];
 
   if (window.BarcodeDetector) {
+    log.push(`[${ts()}] BarcodeDetector nativo disponible`);
     for (const scale of scales) {
       onProgress?.(`Detector nativo (${scale}x)...`);
       const canvas = renderToCanvas(img, scale, false);
-      const result = await tryNativeDetector(canvas);
-      if (result) return result;
+      log.push(`[${ts()}] Nativo ${scale}x (${canvas.width}x${canvas.height})...`);
+      try {
+        const result = await tryNativeDetector(canvas);
+        if (result) {
+          log.push(`[${ts()}] ENCONTRADO (nativo): "${result.text}" [${result.format}]`);
+          alert("DEBUG LOG:\n\n" + log.join("\n"));
+          return result;
+        }
+        log.push(`[${ts()}] Nativo ${scale}x: sin resultado`);
+      } catch (err) {
+        log.push(`[${ts()}] Nativo ${scale}x ERROR: ${err.message}`);
+      }
     }
+  } else {
+    log.push(`[${ts()}] BarcodeDetector nativo NO disponible`);
   }
 
   for (const scale of scales) {
     onProgress?.(`ZBar (${scale}x)...`);
     const canvas = renderToCanvas(img, scale, false);
-    const result = await tryZbar(canvas);
-    if (result) return result;
+    log.push(`[${ts()}] ZBar ${scale}x (${canvas.width}x${canvas.height})...`);
+    try {
+      const result = await tryZbar(canvas);
+      if (result) {
+        log.push(`[${ts()}] ENCONTRADO (zbar): "${result.text}" [${result.format}]`);
+        alert("DEBUG LOG:\n\n" + log.join("\n"));
+        return result;
+      }
+      log.push(`[${ts()}] ZBar ${scale}x: sin resultado`);
+    } catch (err) {
+      log.push(`[${ts()}] ZBar ${scale}x ERROR: ${err.message}`);
+    }
 
     if (scale >= 2) {
-      const enhanced = renderToCanvas(img, scale, true);
-      const enhResult = await tryZbar(enhanced);
-      if (enhResult) return enhResult;
+      log.push(`[${ts()}] ZBar ${scale}x enhanced...`);
+      try {
+        const enhanced = renderToCanvas(img, scale, true);
+        const enhResult = await tryZbar(enhanced);
+        if (enhResult) {
+          log.push(`[${ts()}] ENCONTRADO (zbar enhanced): "${enhResult.text}" [${enhResult.format}]`);
+          alert("DEBUG LOG:\n\n" + log.join("\n"));
+          return enhResult;
+        }
+        log.push(`[${ts()}] ZBar ${scale}x enhanced: sin resultado`);
+      } catch (err) {
+        log.push(`[${ts()}] ZBar ${scale}x enhanced ERROR: ${err.message}`);
+      }
     }
   }
 
@@ -154,15 +202,37 @@ export async function scanFromFile(file, onProgress) {
       onProgress?.(`ZXing ${scale}x ${binarizer}...`);
       const canvas = renderToCanvas(img, scale, scale >= 2);
       const imageData = getImageData(canvas);
-      const result = await tryZxing(imageData, binarizer, false);
-      if (result) return result;
+      log.push(`[${ts()}] ZXing ${scale}x ${binarizer} (${canvas.width}x${canvas.height})...`);
+      try {
+        const result = await tryZxing(imageData, binarizer, false);
+        if (result) {
+          log.push(`[${ts()}] ENCONTRADO (zxing ${binarizer}): "${result.text}" [${result.format}]`);
+          alert("DEBUG LOG:\n\n" + log.join("\n"));
+          return result;
+        }
+        log.push(`[${ts()}] ZXing ${scale}x ${binarizer}: sin resultado`);
+      } catch (err) {
+        log.push(`[${ts()}] ZXing ${scale}x ${binarizer} ERROR: ${err.message}`);
+      }
     }
   }
 
   onProgress?.("Lectura tolerante a errores...");
-  const largeCanvas = renderToCanvas(img, 3, false);
-  const partial = await tryZxingWithErrors(getImageData(largeCanvas));
-  if (partial) return partial;
+  log.push(`[${ts()}] ZXing tolerante a errores 3x...`);
+  try {
+    const largeCanvas = renderToCanvas(img, 3, false);
+    const partial = await tryZxingWithErrors(getImageData(largeCanvas));
+    if (partial) {
+      log.push(`[${ts()}] ENCONTRADO (zxing parcial): "${partial.text}" [${partial.format}]`);
+      alert("DEBUG LOG:\n\n" + log.join("\n"));
+      return partial;
+    }
+    log.push(`[${ts()}] ZXing tolerante: sin resultado`);
+  } catch (err) {
+    log.push(`[${ts()}] ZXing tolerante ERROR: ${err.message}`);
+  }
 
+  log.push(`[${ts()}] NINGÚN motor pudo decodificar`);
+  alert("DEBUG LOG:\n\n" + log.join("\n"));
   return null;
 }

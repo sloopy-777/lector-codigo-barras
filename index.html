@@ -84,8 +84,14 @@
         </div>
 
         <div id="result-section" class="result-section hidden">
-          <h2>Resultado <span id="result-format" class="format-badge hidden"></span></h2>
-          <div class="result-card">
+          <h2 id="result-heading">Resultado</h2>
+
+          <div id="scanning-status" class="scanning-status-card hidden">
+            <div class="scanning-status-spinner"></div>
+            <span>Analizando imagen...</span>
+          </div>
+
+          <div class="result-card hidden">
             <p id="result-text" class="result-text"></p>
             <div class="result-actions">
               <button id="btn-copy" class="btn-action" type="button">

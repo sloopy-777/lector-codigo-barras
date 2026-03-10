@@ -288,6 +288,13 @@ main {
   color: var(--bg);
 }
 
+/* Drag-over state for preview area */
+.file-preview.drag-over {
+  outline: 2px dashed var(--accent);
+  outline-offset: -4px;
+  background: rgba(56, 189, 248, 0.05);
+}
+
 /* Result */
 .result-section {
   animation: slideUp 0.3s ease;
@@ -298,6 +305,28 @@ main {
   color: var(--text-muted);
   margin-bottom: 0.5rem;
   font-weight: 500;
+}
+
+.scanning-status-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 1.25rem;
+  border-left: 3px solid var(--accent);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.scanning-status-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2.5px solid rgba(56, 189, 248, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
 }
 
 .result-card {

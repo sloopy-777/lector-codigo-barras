@@ -35,6 +35,9 @@ const CAMERA_FORMATS = [
 
 const btnChangeFile = $("#btn-change-file");
 const scanningOverlay = $("#scanning-overlay");
+const resultCard = $(".result-card");
+const resultHeading = $("#result-heading");
+const scanningStatus = $("#scanning-status");
 
 let scanner = null;
 let cameraRunning = false;
@@ -61,18 +64,27 @@ function resetFileState() {
   }
 }
 
+function showScanning(msg) {
+  resultSection.classList.remove("hidden");
+  resultCard.classList.add("hidden");
+  scanningStatus.classList.remove("hidden");
+  scanningStatus.querySelector("span").textContent = msg;
+  resultHeading.textContent = "Analizando";
+  btnOpen.classList.add("hidden");
+}
+
 function showResult(text, format) {
   scanning = false;
   scanningOverlay.classList.add("hidden");
+  scanningStatus.classList.add("hidden");
+  resultCard.classList.remove("hidden");
   resultSection.classList.remove("hidden");
   resultText.textContent = text;
 
-  const formatBadge = document.getElementById("result-format");
-  if (formatBadge && format) {
-    formatBadge.textContent = format;
-    formatBadge.classList.remove("hidden");
-  } else if (formatBadge) {
-    formatBadge.classList.add("hidden");
+  if (format) {
+    resultHeading.innerHTML = `Resultado <span class="format-badge">${format}</span>`;
+  } else {
+    resultHeading.textContent = "Resultado";
   }
 
   if (isUrl(text)) {
@@ -83,14 +95,6 @@ function showResult(text, format) {
   }
 
   resultSection.scrollIntoView({ behavior: "smooth" });
-}
-
-function showStatus(msg) {
-  resultSection.classList.remove("hidden");
-  resultText.textContent = msg;
-  const formatBadge = document.getElementById("result-format");
-  if (formatBadge) formatBadge.classList.add("hidden");
-  btnOpen.classList.add("hidden");
 }
 
 function setMode(mode) {
@@ -149,6 +153,8 @@ async function stopCamera() {
 }
 
 async function handleFile(file) {
+  console.log(`[handleFile] Inicio: ${file.name} (${file.type}, ${file.size} bytes)`);
+
   if (currentPreviewUrl) {
     URL.revokeObjectURL(currentPreviewUrl);
   }
@@ -160,27 +166,30 @@ async function handleFile(file) {
   dropZone.classList.add("hidden");
   scanningOverlay.classList.remove("hidden");
 
-  resultSection.classList.add("hidden");
-
-  showStatus("Analizando imagen...");
+  showScanning("Analizando imagen...");
 
   try {
     const result = await scanFromFile(file, (msg) => {
-      if (scanning) showStatus(msg);
+      if (scanning) showScanning(msg);
     });
 
-    if (!scanning) return;
+    if (!scanning) {
+      console.log("[handleFile] Escaneo cancelado (nueva imagen cargada)");
+      return;
+    }
 
     if (result) {
-      console.log(`Decoded by ${result.engine}:`, result.format);
+      console.log(`[handleFile] Resultado: engine=${result.engine}, format=${result.format}, text="${result.text}"`);
       showResult(result.text, result.format);
     } else {
+      console.log("[handleFile] Sin resultado de ningún motor");
       showResult(
         "No se pudo decodificar el código de barras. Intenta con una foto de mejor resolución, bien enfocada y sin inclinación."
       );
     }
   } catch (err) {
-    console.error("Error al escanear archivo:", err);
+    console.error("[handleFile] Error:", err);
+    alert(`ERROR en handleFile:\n${err.message}\n\n${err.stack}`);
     if (scanning) showResult("Error al procesar la imagen.");
   }
 }
@@ -191,9 +200,8 @@ btnFile.addEventListener("click", () => setMode("file"));
 btnStartCamera.addEventListener("click", startCamera);
 
 btnChangeFile.addEventListener("click", () => {
-  scanning = false;
-  resetFileState();
-  resultSection.classList.add("hidden");
+  fileInput.value = "";
+  fileInput.click();
 });
 
 fileInput.addEventListener("click", () => {
@@ -205,23 +213,31 @@ fileInput.addEventListener("change", () => {
   if (file) handleFile(file);
 });
 
-dropZone.addEventListener("dragover", (e) => {
+function handleDragOver(e) {
   e.preventDefault();
-  dropZone.classList.add("drag-over");
-});
+  e.currentTarget.classList.add("drag-over");
+}
 
-dropZone.addEventListener("dragleave", () => {
-  dropZone.classList.remove("drag-over");
-});
+function handleDragLeave(e) {
+  e.currentTarget.classList.remove("drag-over");
+}
 
-dropZone.addEventListener("drop", (e) => {
+function handleDrop(e) {
   e.preventDefault();
-  dropZone.classList.remove("drag-over");
+  e.currentTarget.classList.remove("drag-over");
   const file = e.dataTransfer?.files[0];
   if (file && file.type.startsWith("image/")) {
     handleFile(file);
   }
-});
+}
+
+dropZone.addEventListener("dragover", handleDragOver);
+dropZone.addEventListener("dragleave", handleDragLeave);
+dropZone.addEventListener("drop", handleDrop);
+
+filePreview.addEventListener("dragover", handleDragOver);
+filePreview.addEventListener("dragleave", handleDragLeave);
+filePreview.addEventListener("drop", handleDrop);
 
 btnCopy.addEventListener("click", async () => {
   const text = resultText.textContent ?? "";
