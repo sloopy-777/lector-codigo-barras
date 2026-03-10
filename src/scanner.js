@@ -47,6 +47,69 @@ function getScales(img) {
   return [1, 2, 3];
 }
 
+// ── Decompression for PDF417 with compressed data (e.g. Chilean SII) ──
+
+function looksLikeBinary(text) {
+  let nonPrintable = 0;
+  const len = Math.min(text.length, 200);
+  for (let i = 0; i < len; i++) {
+    const c = text.charCodeAt(i);
+    if (c > 0x7e || (c < 0x20 && c !== 0x0a && c !== 0x0d && c !== 0x09)) {
+      nonPrintable++;
+    }
+  }
+  return nonPrintable / len > 0.3;
+}
+
+async function tryDecompress(bytes) {
+  for (const method of ["deflate-raw", "deflate", "gzip"]) {
+    try {
+      const ds = new DecompressionStream(method);
+      const writer = ds.writable.getWriter();
+      const reader = ds.readable.getReader();
+
+      writer.write(bytes);
+      writer.close();
+
+      const chunks = [];
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+      }
+
+      const totalLen = chunks.reduce((a, c) => a + c.length, 0);
+      const combined = new Uint8Array(totalLen);
+      let off = 0;
+      for (const c of chunks) {
+        combined.set(c, off);
+        off += c.length;
+      }
+
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(combined);
+      if (text.length > 10) return text;
+    } catch {
+      // try next method
+    }
+  }
+  return null;
+}
+
+async function postProcess(result) {
+  if (!result || !looksLikeBinary(result.text)) return result;
+
+  if (result.bytes && result.bytes.length > 0) {
+    const decompressed = await tryDecompress(result.bytes);
+    if (decompressed) {
+      return { ...result, text: decompressed };
+    }
+  }
+
+  return result;
+}
+
+// ── Scan engines ──
+
 async function tryNativeDetector(canvas) {
   if (!window.BarcodeDetector) return null;
 
@@ -98,6 +161,7 @@ async function tryZxing(imageData, binarizer, denoise) {
   if (results.length > 0 && results[0].text) {
     return {
       text: results[0].text,
+      bytes: results[0].bytes,
       format: results[0].format,
       engine: "zxing",
     };
@@ -121,12 +185,15 @@ async function tryZxingWithErrors(imageData) {
   if (withText.length > 0) {
     return {
       text: withText[0].text,
+      bytes: withText[0].bytes,
       format: withText[0].format + " (parcial)",
       engine: "zxing",
     };
   }
   return null;
 }
+
+// ── Main scan pipeline ──
 
 export async function scanFromFile(file, onProgress) {
   const img = await loadImage(file);
@@ -137,7 +204,7 @@ export async function scanFromFile(file, onProgress) {
     for (const scale of scales) {
       onProgress?.(`Detector nativo (${scale}x)...`);
       const canvas = renderToCanvas(img, scale, false);
-      const result = await tryNativeDetector(canvas);
+      const result = await postProcess(await tryNativeDetector(canvas));
       if (result) return result;
     }
   }
@@ -146,12 +213,12 @@ export async function scanFromFile(file, onProgress) {
   for (const scale of scales) {
     onProgress?.(`ZBar (${scale}x)...`);
     const canvas = renderToCanvas(img, scale, false);
-    const result = await tryZbar(canvas);
+    const result = await postProcess(await tryZbar(canvas));
     if (result) return result;
 
     onProgress?.(`ZBar enhanced (${scale}x)...`);
     const enhanced = renderToCanvas(img, scale, true);
-    const enhResult = await tryZbar(enhanced);
+    const enhResult = await postProcess(await tryZbar(enhanced));
     if (enhResult) return enhResult;
   }
 
@@ -163,7 +230,7 @@ export async function scanFromFile(file, onProgress) {
       onProgress?.(`ZXing ${scale}x ${binarizer}...`);
       const canvas = renderToCanvas(img, scale, false);
       const imageData = getImageData(canvas);
-      const result = await tryZxing(imageData, binarizer, false);
+      const result = await postProcess(await tryZxing(imageData, binarizer, false));
       if (result) return result;
     }
   }
@@ -173,14 +240,14 @@ export async function scanFromFile(file, onProgress) {
     onProgress?.(`ZXing enhanced (${scale}x)...`);
     const canvas = renderToCanvas(img, scale, true);
     const imageData = getImageData(canvas);
-    const result = await tryZxing(imageData, "LocalAverage", true);
+    const result = await postProcess(await tryZxing(imageData, "LocalAverage", true));
     if (result) return result;
   }
 
   // Phase 4: ZXing with error tolerance
   onProgress?.("Lectura tolerante a errores...");
   const canvas1x = renderToCanvas(img, 1, false);
-  const partial = await tryZxingWithErrors(getImageData(canvas1x));
+  const partial = await postProcess(await tryZxingWithErrors(getImageData(canvas1x)));
   if (partial) return partial;
 
   return null;
