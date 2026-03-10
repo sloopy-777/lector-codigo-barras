@@ -1,0 +1,13 @@
+services:
+  frontend:
+    build: .
+    ports:
+      - "80:80"
+    depends_on:
+      - api
+
+  api:
+    build: ./api
+    expose:
+      - "8000"
+    restart: unless-stopped

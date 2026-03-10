@@ -258,5 +258,37 @@ export async function scanFromFile(file, onProgress) {
   const partial = await postProcess(await tryZxingWithErrors(getImageData(canvas1x)));
   if (partial) return partial;
 
+  // Phase 5: Server-side scanning (pyzbar + OpenCV)
+  onProgress?.("Enviando al servidor...");
+  const serverResult = await tryServerScan(file);
+  if (serverResult) return serverResult;
+
+  return null;
+}
+
+async function tryServerScan(file) {
+  try {
+    const formData = new FormData();
+    formData.append("file", file);
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000);
+
+    const response = await fetch("/api/scan", {
+      method: "POST",
+      body: formData,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+
+    if (!response.ok) return null;
+
+    const data = await response.json();
+    if (data.text) {
+      return { text: data.text, format: data.format, engine: data.engine };
+    }
+  } catch {
+    // Server unavailable — skip silently
+  }
   return null;
 }
