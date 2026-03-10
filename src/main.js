@@ -29,6 +29,7 @@ const scanningStatus = $("#scanning-status");
 
 let cameraStream = null;
 let cameraRunning = false;
+let torchEnabled = false;
 let autoScanTimer = null;
 let scanning = false;
 let capturing = false;
@@ -139,8 +140,9 @@ async function startCamera() {
     cameraStream = await navigator.mediaDevices.getUserMedia({
       video: {
         facingMode: "environment",
-        width: { ideal: 1920 },
-        height: { ideal: 1080 },
+        width: { ideal: 3840 },
+        height: { ideal: 2160 },
+        focusMode: { ideal: "continuous" },
       },
       audio: false,
     });
@@ -149,8 +151,10 @@ async function startCamera() {
     await cameraVideo.play();
 
     cameraRunning = true;
+    torchEnabled = false;
     cameraPlaceholder.classList.add("hidden");
     cameraViewfinder.classList.remove("hidden");
+    updateTorchButton();
 
     startAutoScan();
   } catch (err) {
@@ -177,6 +181,7 @@ function stopCamera() {
   }
   cameraVideo.srcObject = null;
   cameraRunning = false;
+  torchEnabled = false;
   cameraViewfinder.classList.add("hidden");
   cameraPlaceholder.classList.remove("hidden");
   btnStartCamera.classList.remove("hidden");
@@ -187,6 +192,43 @@ function stopCamera() {
   if (spinner) spinner.style.display = "none";
 }
 
+function getVideoTrack() {
+  return cameraStream?.getVideoTracks()[0] ?? null;
+}
+
+function updateTorchButton() {
+  const btn = $("#btn-torch");
+  if (!btn) return;
+  const track = getVideoTrack();
+  const caps = track?.getCapabilities?.();
+  if (!caps?.torch) {
+    btn.classList.add("hidden");
+    return;
+  }
+  btn.classList.remove("hidden");
+  btn.classList.toggle("active", torchEnabled);
+}
+
+async function toggleTorch() {
+  const track = getVideoTrack();
+  if (!track) return;
+  torchEnabled = !torchEnabled;
+  try {
+    await track.applyConstraints({ advanced: [{ torch: torchEnabled }] });
+  } catch {
+    torchEnabled = false;
+  }
+  updateTorchButton();
+}
+
+function captureRegion(sx, sy, sw, sh) {
+  const canvas = document.createElement("canvas");
+  canvas.width = sw;
+  canvas.height = sh;
+  canvas.getContext("2d").drawImage(cameraVideo, sx, sy, sw, sh, 0, 0, sw, sh);
+  return canvas;
+}
+
 function captureViewfinder() {
   const vw = cameraVideo.videoWidth;
   const vh = cameraVideo.videoHeight;
@@ -194,14 +236,7 @@ function captureViewfinder() {
   const cropH = Math.round(cropW / 1.4);
   const cropX = Math.round((vw - cropW) / 2);
   const cropY = Math.round((vh - cropH) / 2 - vh * 0.05);
-
-  const canvas = document.createElement("canvas");
-  canvas.width = cropW;
-  canvas.height = cropH;
-  canvas.getContext("2d").drawImage(
-    cameraVideo, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH
-  );
-  return canvas;
+  return captureRegion(cropX, Math.max(0, cropY), cropW, cropH);
 }
 
 function captureFullFrame() {
@@ -212,9 +247,45 @@ function captureFullFrame() {
   return canvas;
 }
 
+function sharpen(canvas) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const d = imgData.data;
+  const w = canvas.width;
+  const h = canvas.height;
+  const out = new Uint8ClampedArray(d.length);
+
+  for (let y = 1; y < h - 1; y++) {
+    for (let x = 1; x < w - 1; x++) {
+      for (let c = 0; c < 3; c++) {
+        const i = (y * w + x) * 4 + c;
+        out[i] = Math.min(255, Math.max(0,
+          5 * d[i]
+          - d[((y - 1) * w + x) * 4 + c]
+          - d[((y + 1) * w + x) * 4 + c]
+          - d[(y * w + x - 1) * 4 + c]
+          - d[(y * w + x + 1) * 4 + c]
+        ));
+      }
+      out[(y * w + x) * 4 + 3] = d[(y * w + x) * 4 + 3];
+    }
+  }
+
+  const result = document.createElement("canvas");
+  result.width = w;
+  result.height = h;
+  const outData = new ImageData(out, w, h);
+  result.getContext("2d").putImageData(outData, 0, 0);
+  return result;
+}
+
 async function canvasToFile(canvas, name) {
   const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.95));
   return new File([blob], name, { type: "image/jpeg" });
+}
+
+function delay(ms) {
+  return new Promise((r) => setTimeout(r, ms));
 }
 
 async function captureAndScan() {
@@ -224,23 +295,44 @@ async function captureAndScan() {
   btnCapture.classList.add("capturing");
 
   stopAutoScan();
-  showScanning("Analizando captura...");
+  showScanning("Capturando ráfaga...");
 
   try {
-    const croppedFile = await canvasToFile(captureViewfinder(), "crop.jpg");
-    let result = await scanFromFile(croppedFile, (msg) => showScanning(msg));
-
-    if (!result) {
-      showScanning("Probando frame completo...");
-      const fullFile = await canvasToFile(captureFullFrame(), "full.jpg");
-      result = await scanFromFile(fullFile, (msg) => showScanning(msg));
+    const BURST = 4;
+    const frames = [];
+    for (let i = 0; i < BURST; i++) {
+      frames.push(captureViewfinder());
+      if (i < BURST - 1) await delay(150);
     }
 
-    if (result) {
-      showResult(result.text, result.format);
-    } else {
-      showResult("No se detectó ningún código. Acerca más el código a la cámara e intenta de nuevo.");
+    for (let i = 0; i < frames.length; i++) {
+      showScanning(`Analizando frame ${i + 1}/${frames.length}...`);
+      const file = await canvasToFile(frames[i], `burst-${i}.jpg`);
+      const result = await scanFromFile(file, (msg) => showScanning(`[${i + 1}/${frames.length}] ${msg}`));
+      if (result) {
+        showResult(result.text, result.format);
+        return;
+      }
+
+      showScanning(`Frame ${i + 1} con sharpening...`);
+      const sharpened = sharpen(frames[i]);
+      const sharpFile = await canvasToFile(sharpened, `burst-sharp-${i}.jpg`);
+      const sharpResult = await scanFromFile(sharpFile, (msg) => showScanning(`[${i + 1}S/${frames.length}] ${msg}`));
+      if (sharpResult) {
+        showResult(sharpResult.text, sharpResult.format);
+        return;
+      }
     }
+
+    showScanning("Probando frame completo...");
+    const fullFile = await canvasToFile(captureFullFrame(), "full.jpg");
+    const fullResult = await scanFromFile(fullFile, (msg) => showScanning(msg));
+    if (fullResult) {
+      showResult(fullResult.text, fullResult.format);
+      return;
+    }
+
+    showResult("No se detectó ningún código. Intenta con mejor iluminación o acercando más la cámara.");
   } catch (err) {
     console.error("Error al procesar captura:", err);
     showResult("Error al procesar la captura.");
@@ -324,6 +416,7 @@ btnFile.addEventListener("click", () => setMode("file"));
 btnStartCamera.addEventListener("click", startCamera);
 btnStopCamera.addEventListener("click", stopCamera);
 btnCapture.addEventListener("click", captureAndScan);
+$("#btn-torch")?.addEventListener("click", toggleTorch);
 
 btnChangeFile.addEventListener("click", () => {
   fileInput.value = "";

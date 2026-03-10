@@ -242,9 +242,9 @@ main {
   background: rgba(255, 255, 255, 0.3);
 }
 
-.btn-viewfinder-spacer {
-  width: 40px;
-  flex-shrink: 0;
+.btn-viewfinder-action.active {
+  background: var(--accent);
+  color: var(--bg);
 }
 
 .btn-primary {
