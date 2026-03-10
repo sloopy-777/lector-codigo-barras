@@ -7,8 +7,8 @@ export default defineConfig({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg", "icons/*.png"],
       manifest: {
-        name: "Conserje - Escáner de códigos",
-        short_name: "Conserje",
+        name: "Escáner de códigos",
+        short_name: "",
         description: "Escanea códigos QR y de barras con cámara o archivo",
         theme_color: "#0f172a",
         background_color: "#0f172a",

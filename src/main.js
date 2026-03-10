@@ -112,32 +112,119 @@ function setMode(mode) {
   }
 }
 
+function showCameraLoading() {
+  cameraPlaceholder.classList.remove("hidden");
+  btnStartCamera.classList.add("hidden");
+  cameraPlaceholder.querySelector("p").textContent = "Iniciando cámara...";
+  const icon = cameraPlaceholder.querySelector("svg");
+  if (icon) icon.style.display = "none";
+  let spinner = cameraPlaceholder.querySelector(".camera-loading-spinner");
+  if (!spinner) {
+    spinner = document.createElement("div");
+    spinner.className = "camera-loading-spinner";
+    cameraPlaceholder.prepend(spinner);
+  }
+  spinner.style.display = "";
+}
+
+function showCameraError(msg) {
+  cameraPlaceholder.classList.remove("hidden");
+  btnStartCamera.classList.remove("hidden");
+  cameraPlaceholder.querySelector("p").textContent = msg;
+  const icon = cameraPlaceholder.querySelector("svg");
+  if (icon) icon.style.display = "";
+  const spinner = cameraPlaceholder.querySelector(".camera-loading-spinner");
+  if (spinner) spinner.style.display = "none";
+}
+
 async function startCamera() {
   if (cameraRunning) return;
 
-  scanner = new Html5Qrcode("reader", {
-    formatsToSupport: CAMERA_FORMATS,
-    verbose: false,
-  });
+  const log = [];
+  const t0 = performance.now();
+  const ts = () => `${(performance.now() - t0).toFixed(0)}ms`;
 
-  cameraPlaceholder.classList.add("hidden");
+  log.push(`[${ts()}] startCamera() iniciado`);
+  log.push(`[${ts()}] URL: ${location.href}`);
+  log.push(`[${ts()}] Protocolo: ${location.protocol}`);
+  log.push(`[${ts()}] UserAgent: ${navigator.userAgent}`);
+
+  showCameraLoading();
+
+  const TIMEOUT_MS = 15000;
+  let timedOut = false;
 
   try {
-    await scanner.start(
+    log.push(`[${ts()}] Creando Html5Qrcode...`);
+    scanner = new Html5Qrcode("reader", {
+      formatsToSupport: CAMERA_FORMATS,
+      verbose: false,
+    });
+
+    const containerWidth = cameraContainer.clientWidth - 32;
+    const qrboxWidth = Math.min(280, containerWidth);
+    const qrboxHeight = Math.round(qrboxWidth * 0.7);
+    log.push(`[${ts()}] Container: ${cameraContainer.clientWidth}px, qrbox: ${qrboxWidth}x${qrboxHeight}`);
+
+    log.push(`[${ts()}] Llamando scanner.start()...`);
+    const startPromise = scanner.start(
       { facingMode: "environment" },
-      { fps: 10, qrbox: { width: 280, height: 200 } },
+      { fps: 10, qrbox: { width: qrboxWidth, height: qrboxHeight } },
       (decodedText) => {
         showResult(decodedText);
         stopCamera();
       },
       () => {}
     );
+
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => {
+        timedOut = true;
+        reject(new Error("timeout"));
+      }, TIMEOUT_MS);
+    });
+
+    await Promise.race([startPromise, timeoutPromise]);
+
+    if (timedOut) return;
+
     cameraRunning = true;
+    cameraPlaceholder.classList.add("hidden");
+    log.push(`[${ts()}] Cámara iniciada OK`);
+    alert("DEBUG CAMERA:\n\n" + log.join("\n"));
   } catch (err) {
     console.error("Error al iniciar cámara:", err);
-    cameraPlaceholder.classList.remove("hidden");
-    cameraPlaceholder.querySelector("p").textContent =
-      "No se pudo acceder a la cámara. Verifica los permisos.";
+    log.push(`[${ts()}] ERROR: ${err?.message || err}`);
+    log.push(`[${ts()}] timedOut=${timedOut}`);
+    alert("DEBUG CAMERA ERROR:\n\n" + log.join("\n"));
+
+    if (timedOut) {
+      try { await scanner?.stop(); } catch {}
+      showCameraError(
+        "La cámara tardó demasiado en responder. Verifica los permisos y recarga la página."
+      );
+    } else {
+      const msg = String(err?.message || err).toLowerCase();
+      if (msg.includes("denied") || msg.includes("permission") || msg.includes("not allowed")) {
+        showCameraError(
+          "Permiso de cámara denegado. Activa el permiso en los ajustes del navegador y recarga."
+        );
+      } else if (msg.includes("secure") || msg.includes("https")) {
+        showCameraError(
+          "La cámara requiere conexión HTTPS. Verifica que la URL use https://."
+        );
+      } else if (msg.includes("not found") || msg.includes("no video")) {
+        showCameraError(
+          "No se encontró ninguna cámara en este dispositivo."
+        );
+      } else {
+        showCameraError(
+          `No se pudo iniciar la cámara: ${err?.message || err}`
+        );
+      }
+    }
+
+    scanner = null;
   }
 }
 
