@@ -1,5 +1,4 @@
 import "./style.css";
-import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { scanFromFile } from "./scanner";
 
 const $ = (sel) => document.querySelector(sel);
@@ -10,6 +9,10 @@ const cameraContainer = $("#camera-container");
 const fileContainer = $("#file-container");
 const cameraPlaceholder = $("#camera-placeholder");
 const btnStartCamera = $("#btn-start-camera");
+const cameraViewfinder = $("#camera-viewfinder");
+const cameraVideo = $("#camera-video");
+const btnCapture = $("#btn-capture");
+const btnStopCamera = $("#btn-stop-camera");
 const fileInput = $("#file-input");
 const dropZone = $("#drop-zone");
 const filePreview = $("#file-preview");
@@ -18,30 +21,17 @@ const resultSection = $("#result-section");
 const resultText = $("#result-text");
 const btnCopy = $("#btn-copy");
 const btnOpen = $("#btn-open");
-
-const CAMERA_FORMATS = [
-  Html5QrcodeSupportedFormats.QR_CODE,
-  Html5QrcodeSupportedFormats.PDF_417,
-  Html5QrcodeSupportedFormats.AZTEC,
-  Html5QrcodeSupportedFormats.DATA_MATRIX,
-  Html5QrcodeSupportedFormats.CODE_128,
-  Html5QrcodeSupportedFormats.CODE_39,
-  Html5QrcodeSupportedFormats.EAN_13,
-  Html5QrcodeSupportedFormats.EAN_8,
-  Html5QrcodeSupportedFormats.UPC_A,
-  Html5QrcodeSupportedFormats.UPC_E,
-  Html5QrcodeSupportedFormats.ITF,
-];
-
 const btnChangeFile = $("#btn-change-file");
 const scanningOverlay = $("#scanning-overlay");
 const resultCard = $(".result-card");
 const resultHeading = $("#result-heading");
 const scanningStatus = $("#scanning-status");
 
-let scanner = null;
+let cameraStream = null;
 let cameraRunning = false;
+let autoScanTimer = null;
 let scanning = false;
+let capturing = false;
 let currentPreviewUrl = null;
 
 function isUrl(text) {
@@ -112,6 +102,8 @@ function setMode(mode) {
   }
 }
 
+// ── Camera ──
+
 function showCameraLoading() {
   cameraPlaceholder.classList.remove("hidden");
   btnStartCamera.classList.add("hidden");
@@ -128,6 +120,7 @@ function showCameraLoading() {
 }
 
 function showCameraError(msg) {
+  cameraViewfinder.classList.add("hidden");
   cameraPlaceholder.classList.remove("hidden");
   btnStartCamera.classList.remove("hidden");
   cameraPlaceholder.querySelector("p").textContent = msg;
@@ -140,108 +133,133 @@ function showCameraError(msg) {
 async function startCamera() {
   if (cameraRunning) return;
 
-  const log = [];
-  const t0 = performance.now();
-  const ts = () => `${(performance.now() - t0).toFixed(0)}ms`;
-
-  log.push(`[${ts()}] startCamera() iniciado`);
-  log.push(`[${ts()}] URL: ${location.href}`);
-  log.push(`[${ts()}] Protocolo: ${location.protocol}`);
-  log.push(`[${ts()}] UserAgent: ${navigator.userAgent}`);
-
   showCameraLoading();
 
-  const TIMEOUT_MS = 15000;
-  let timedOut = false;
-
   try {
-    log.push(`[${ts()}] Creando Html5Qrcode...`);
-    scanner = new Html5Qrcode("reader", {
-      formatsToSupport: CAMERA_FORMATS,
-      verbose: false,
-    });
-
-    const containerWidth = cameraContainer.clientWidth - 32;
-    const qrboxWidth = Math.min(280, containerWidth);
-    const qrboxHeight = Math.round(qrboxWidth * 0.7);
-    log.push(`[${ts()}] Container: ${cameraContainer.clientWidth}px, qrbox: ${qrboxWidth}x${qrboxHeight}`);
-
-    log.push(`[${ts()}] Llamando scanner.start()...`);
-    const startPromise = scanner.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: { width: qrboxWidth, height: qrboxHeight } },
-      (decodedText) => {
-        showResult(decodedText);
-        stopCamera();
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: {
+        facingMode: "environment",
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
       },
-      () => {}
-    );
-
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => {
-        timedOut = true;
-        reject(new Error("timeout"));
-      }, TIMEOUT_MS);
+      audio: false,
     });
 
-    await Promise.race([startPromise, timeoutPromise]);
-
-    if (timedOut) return;
+    cameraVideo.srcObject = cameraStream;
+    await cameraVideo.play();
 
     cameraRunning = true;
     cameraPlaceholder.classList.add("hidden");
-    log.push(`[${ts()}] Cámara iniciada OK`);
-    alert("DEBUG CAMERA:\n\n" + log.join("\n"));
+    cameraViewfinder.classList.remove("hidden");
+
+    startAutoScan();
   } catch (err) {
     console.error("Error al iniciar cámara:", err);
-    log.push(`[${ts()}] ERROR: ${err?.message || err}`);
-    log.push(`[${ts()}] timedOut=${timedOut}`);
-    alert("DEBUG CAMERA ERROR:\n\n" + log.join("\n"));
+    const msg = String(err?.message || err).toLowerCase();
 
-    if (timedOut) {
-      try { await scanner?.stop(); } catch {}
-      showCameraError(
-        "La cámara tardó demasiado en responder. Verifica los permisos y recarga la página."
-      );
+    if (msg.includes("denied") || msg.includes("permission") || msg.includes("not allowed")) {
+      showCameraError("Permiso de cámara denegado. Activa el permiso en los ajustes del navegador y recarga.");
+    } else if (msg.includes("secure") || msg.includes("https")) {
+      showCameraError("La cámara requiere conexión HTTPS. Verifica que la URL use https://.");
+    } else if (msg.includes("not found") || msg.includes("no video") || msg.includes("requested device not found")) {
+      showCameraError("No se encontró ninguna cámara en este dispositivo.");
     } else {
-      const msg = String(err?.message || err).toLowerCase();
-      if (msg.includes("denied") || msg.includes("permission") || msg.includes("not allowed")) {
-        showCameraError(
-          "Permiso de cámara denegado. Activa el permiso en los ajustes del navegador y recarga."
-        );
-      } else if (msg.includes("secure") || msg.includes("https")) {
-        showCameraError(
-          "La cámara requiere conexión HTTPS. Verifica que la URL use https://."
-        );
-      } else if (msg.includes("not found") || msg.includes("no video")) {
-        showCameraError(
-          "No se encontró ninguna cámara en este dispositivo."
-        );
-      } else {
-        showCameraError(
-          `No se pudo iniciar la cámara: ${err?.message || err}`
-        );
-      }
+      showCameraError(`No se pudo iniciar la cámara: ${err?.message || err}`);
     }
-
-    scanner = null;
   }
 }
 
-async function stopCamera() {
-  if (scanner && cameraRunning) {
+function stopCamera() {
+  stopAutoScan();
+  if (cameraStream) {
+    cameraStream.getTracks().forEach((t) => t.stop());
+    cameraStream = null;
+  }
+  cameraVideo.srcObject = null;
+  cameraRunning = false;
+  cameraViewfinder.classList.add("hidden");
+  cameraPlaceholder.classList.remove("hidden");
+  btnStartCamera.classList.remove("hidden");
+  cameraPlaceholder.querySelector("p").textContent = "Presiona para iniciar la cámara";
+  const icon = cameraPlaceholder.querySelector("svg");
+  if (icon) icon.style.display = "";
+  const spinner = cameraPlaceholder.querySelector(".camera-loading-spinner");
+  if (spinner) spinner.style.display = "none";
+}
+
+function captureFrame() {
+  const canvas = document.createElement("canvas");
+  canvas.width = cameraVideo.videoWidth;
+  canvas.height = cameraVideo.videoHeight;
+  canvas.getContext("2d").drawImage(cameraVideo, 0, 0);
+  return canvas;
+}
+
+async function captureAndScan() {
+  if (capturing || !cameraRunning) return;
+  capturing = true;
+  btnCapture.disabled = true;
+  btnCapture.classList.add("capturing");
+
+  stopAutoScan();
+
+  const canvas = captureFrame();
+
+  showScanning("Analizando captura...");
+
+  try {
+    const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.92));
+    const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+
+    const result = await scanFromFile(file, (msg) => showScanning(msg));
+
+    if (result) {
+      showResult(result.text, result.format);
+    } else {
+      showResult("No se detectó ningún código. Acerca más el código a la cámara e intenta de nuevo.");
+    }
+  } catch (err) {
+    console.error("Error al procesar captura:", err);
+    showResult("Error al procesar la captura.");
+  } finally {
+    capturing = false;
+    btnCapture.disabled = false;
+    btnCapture.classList.remove("capturing");
+    if (cameraRunning) startAutoScan();
+  }
+}
+
+function startAutoScan() {
+  stopAutoScan();
+  if (!window.BarcodeDetector) return;
+
+  const detector = new window.BarcodeDetector();
+
+  autoScanTimer = setInterval(async () => {
+    if (!cameraRunning || capturing) return;
+    if (cameraVideo.readyState < cameraVideo.HAVE_ENOUGH_DATA) return;
+
     try {
-      await scanner.stop();
+      const results = await detector.detect(cameraVideo);
+      if (results.length > 0 && results[0].rawValue) {
+        showResult(results[0].rawValue, results[0].format);
+      }
     } catch {
-      // already stopped
+      // frame not ready
     }
-    cameraRunning = false;
+  }, 400);
+}
+
+function stopAutoScan() {
+  if (autoScanTimer) {
+    clearInterval(autoScanTimer);
+    autoScanTimer = null;
   }
 }
+
+// ── File handling ──
 
 async function handleFile(file) {
-  console.log(`[handleFile] Inicio: ${file.name} (${file.type}, ${file.size} bytes)`);
-
   if (currentPreviewUrl) {
     URL.revokeObjectURL(currentPreviewUrl);
   }
@@ -260,31 +278,29 @@ async function handleFile(file) {
       if (scanning) showScanning(msg);
     });
 
-    if (!scanning) {
-      console.log("[handleFile] Escaneo cancelado (nueva imagen cargada)");
-      return;
-    }
+    if (!scanning) return;
 
     if (result) {
-      console.log(`[handleFile] Resultado: engine=${result.engine}, format=${result.format}, text="${result.text}"`);
       showResult(result.text, result.format);
     } else {
-      console.log("[handleFile] Sin resultado de ningún motor");
       showResult(
         "No se pudo decodificar el código de barras. Intenta con una foto de mejor resolución, bien enfocada y sin inclinación."
       );
     }
   } catch (err) {
-    console.error("[handleFile] Error:", err);
-    alert(`ERROR en handleFile:\n${err.message}\n\n${err.stack}`);
+    console.error("Error al escanear archivo:", err);
     if (scanning) showResult("Error al procesar la imagen.");
   }
 }
+
+// ── Event listeners ──
 
 btnCamera.addEventListener("click", () => setMode("camera"));
 btnFile.addEventListener("click", () => setMode("file"));
 
 btnStartCamera.addEventListener("click", startCamera);
+btnStopCamera.addEventListener("click", stopCamera);
+btnCapture.addEventListener("click", captureAndScan);
 
 btnChangeFile.addEventListener("click", () => {
   fileInput.value = "";

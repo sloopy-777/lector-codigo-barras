@@ -13,7 +13,6 @@
   },
   "dependencies": {
     "@undecaf/barcode-detector-polyfill": "^0.9.23",
-    "html5-qrcode": "^2.3.8",
     "vite-plugin-pwa": "^1.2.0",
     "zxing-wasm": "^3.0.0"
   }
