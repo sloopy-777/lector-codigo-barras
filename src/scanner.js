@@ -105,6 +105,12 @@ async function postProcess(result) {
     }
   }
 
+  // Binary-looking text without raw bytes (native/ZBar) is unusable — skip it
+  // so the pipeline falls through to ZXing which provides raw bytes.
+  if (!result.bytes || result.bytes.length === 0) {
+    return null;
+  }
+
   return result;
 }
 
@@ -227,11 +233,13 @@ export async function scanFromFile(file, onProgress) {
 
   for (const scale of scales) {
     for (const binarizer of binarizers) {
-      onProgress?.(`ZXing ${scale}x ${binarizer}...`);
-      const canvas = renderToCanvas(img, scale, false);
-      const imageData = getImageData(canvas);
-      const result = await postProcess(await tryZxing(imageData, binarizer, false));
-      if (result) return result;
+      for (const denoise of [false, true]) {
+        onProgress?.(`ZXing ${scale}x ${binarizer}${denoise ? " +denoise" : ""}...`);
+        const canvas = renderToCanvas(img, scale, false);
+        const imageData = getImageData(canvas);
+        const result = await postProcess(await tryZxing(imageData, binarizer, denoise));
+        if (result) return result;
+      }
     }
   }
 
