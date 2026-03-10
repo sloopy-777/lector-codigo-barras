@@ -33,8 +33,13 @@ const CAMERA_FORMATS = [
   Html5QrcodeSupportedFormats.ITF,
 ];
 
+const btnChangeFile = $("#btn-change-file");
+const scanningOverlay = $("#scanning-overlay");
+
 let scanner = null;
 let cameraRunning = false;
+let scanning = false;
+let currentPreviewUrl = null;
 
 function isUrl(text) {
   try {
@@ -45,7 +50,20 @@ function isUrl(text) {
   }
 }
 
+function resetFileState() {
+  fileInput.value = "";
+  filePreview.classList.add("hidden");
+  dropZone.classList.remove("hidden");
+  scanningOverlay.classList.add("hidden");
+  if (currentPreviewUrl) {
+    URL.revokeObjectURL(currentPreviewUrl);
+    currentPreviewUrl = null;
+  }
+}
+
 function showResult(text, format) {
+  scanning = false;
+  scanningOverlay.classList.add("hidden");
   resultSection.classList.remove("hidden");
   resultText.textContent = text;
 
@@ -131,16 +149,27 @@ async function stopCamera() {
 }
 
 async function handleFile(file) {
-  const previewUrl = URL.createObjectURL(file);
-  previewImg.src = previewUrl;
+  if (currentPreviewUrl) {
+    URL.revokeObjectURL(currentPreviewUrl);
+  }
+
+  scanning = true;
+  currentPreviewUrl = URL.createObjectURL(file);
+  previewImg.src = currentPreviewUrl;
   filePreview.classList.remove("hidden");
+  dropZone.classList.add("hidden");
+  scanningOverlay.classList.remove("hidden");
+
+  resultSection.classList.add("hidden");
 
   showStatus("Analizando imagen...");
 
   try {
     const result = await scanFromFile(file, (msg) => {
-      showStatus(msg);
+      if (scanning) showStatus(msg);
     });
+
+    if (!scanning) return;
 
     if (result) {
       console.log(`Decoded by ${result.engine}:`, result.format);
@@ -152,9 +181,7 @@ async function handleFile(file) {
     }
   } catch (err) {
     console.error("Error al escanear archivo:", err);
-    showResult("Error al procesar la imagen.");
-  } finally {
-    URL.revokeObjectURL(previewUrl);
+    if (scanning) showResult("Error al procesar la imagen.");
   }
 }
 
@@ -162,6 +189,16 @@ btnCamera.addEventListener("click", () => setMode("camera"));
 btnFile.addEventListener("click", () => setMode("file"));
 
 btnStartCamera.addEventListener("click", startCamera);
+
+btnChangeFile.addEventListener("click", () => {
+  scanning = false;
+  resetFileState();
+  resultSection.classList.add("hidden");
+});
+
+fileInput.addEventListener("click", () => {
+  fileInput.value = "";
+});
 
 fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
