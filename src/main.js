@@ -2,23 +2,22 @@ import "./style.css";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 import { scanFromFile } from "./scanner";
 
-const $ = <T extends HTMLElement>(sel: string) =>
-  document.querySelector<T>(sel)!;
+const $ = (sel) => document.querySelector(sel);
 
-const btnCamera = $<HTMLButtonElement>("#btn-camera");
-const btnFile = $<HTMLButtonElement>("#btn-file");
-const cameraContainer = $<HTMLDivElement>("#camera-container");
-const fileContainer = $<HTMLDivElement>("#file-container");
-const cameraPlaceholder = $<HTMLDivElement>("#camera-placeholder");
-const btnStartCamera = $<HTMLButtonElement>("#btn-start-camera");
-const fileInput = $<HTMLInputElement>("#file-input");
-const dropZone = $<HTMLLabelElement>("#drop-zone");
-const filePreview = $<HTMLDivElement>("#file-preview");
-const previewImg = $<HTMLImageElement>("#preview-img");
-const resultSection = $<HTMLDivElement>("#result-section");
-const resultText = $<HTMLParagraphElement>("#result-text");
-const btnCopy = $<HTMLButtonElement>("#btn-copy");
-const btnOpen = $<HTMLButtonElement>("#btn-open");
+const btnCamera = $("#btn-camera");
+const btnFile = $("#btn-file");
+const cameraContainer = $("#camera-container");
+const fileContainer = $("#file-container");
+const cameraPlaceholder = $("#camera-placeholder");
+const btnStartCamera = $("#btn-start-camera");
+const fileInput = $("#file-input");
+const dropZone = $("#drop-zone");
+const filePreview = $("#file-preview");
+const previewImg = $("#preview-img");
+const resultSection = $("#result-section");
+const resultText = $("#result-text");
+const btnCopy = $("#btn-copy");
+const btnOpen = $("#btn-open");
 
 const CAMERA_FORMATS = [
   Html5QrcodeSupportedFormats.QR_CODE,
@@ -34,10 +33,10 @@ const CAMERA_FORMATS = [
   Html5QrcodeSupportedFormats.ITF,
 ];
 
-let scanner: Html5Qrcode | null = null;
+let scanner = null;
 let cameraRunning = false;
 
-function isUrl(text: string): boolean {
+function isUrl(text) {
   try {
     new URL(text);
     return true;
@@ -46,7 +45,7 @@ function isUrl(text: string): boolean {
   }
 }
 
-function showResult(text: string, format?: string) {
+function showResult(text, format) {
   resultSection.classList.remove("hidden");
   resultText.textContent = text;
 
@@ -68,7 +67,7 @@ function showResult(text: string, format?: string) {
   resultSection.scrollIntoView({ behavior: "smooth" });
 }
 
-function showStatus(msg: string) {
+function showStatus(msg) {
   resultSection.classList.remove("hidden");
   resultText.textContent = msg;
   const formatBadge = document.getElementById("result-format");
@@ -76,7 +75,7 @@ function showStatus(msg: string) {
   btnOpen.classList.add("hidden");
 }
 
-function setMode(mode: "camera" | "file") {
+function setMode(mode) {
   if (mode === "camera") {
     btnCamera.classList.add("active");
     btnFile.classList.remove("active");
@@ -115,7 +114,7 @@ async function startCamera() {
   } catch (err) {
     console.error("Error al iniciar cámara:", err);
     cameraPlaceholder.classList.remove("hidden");
-    cameraPlaceholder.querySelector("p")!.textContent =
+    cameraPlaceholder.querySelector("p").textContent =
       "No se pudo acceder a la cámara. Verifica los permisos.";
   }
 }
@@ -131,7 +130,7 @@ async function stopCamera() {
   }
 }
 
-async function handleFile(file: File) {
+async function handleFile(file) {
   const previewUrl = URL.createObjectURL(file);
   previewImg.src = previewUrl;
   filePreview.classList.remove("hidden");
@@ -159,20 +158,16 @@ async function handleFile(file: File) {
   }
 }
 
-// Mode switching
 btnCamera.addEventListener("click", () => setMode("camera"));
 btnFile.addEventListener("click", () => setMode("file"));
 
-// Camera start
 btnStartCamera.addEventListener("click", startCamera);
 
-// File input
 fileInput.addEventListener("change", () => {
   const file = fileInput.files?.[0];
   if (file) handleFile(file);
 });
 
-// Drag & drop
 dropZone.addEventListener("dragover", (e) => {
   e.preventDefault();
   dropZone.classList.add("drag-over");
@@ -191,7 +186,6 @@ dropZone.addEventListener("drop", (e) => {
   }
 });
 
-// Copy result
 btnCopy.addEventListener("click", async () => {
   const text = resultText.textContent ?? "";
   await navigator.clipboard.writeText(text);
@@ -207,7 +201,6 @@ btnCopy.addEventListener("click", async () => {
   }, 2000);
 });
 
-// Register PWA
 if ("serviceWorker" in navigator) {
   import("virtual:pwa-register").then(({ registerSW }) => {
     registerSW({ immediate: true });

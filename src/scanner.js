@@ -1,13 +1,7 @@
-import { readBarcodes, type ReaderOptions } from "zxing-wasm/reader";
+import { readBarcodes } from "zxing-wasm/reader";
 import { BarcodeDetectorPolyfill } from "@undecaf/barcode-detector-polyfill";
 
-export interface ScanResult {
-  text: string;
-  format: string;
-  engine: string;
-}
-
-function loadImage(file: File): Promise<HTMLImageElement> {
+function loadImage(file) {
   return new Promise((resolve, reject) => {
     const img = new Image();
     const url = URL.createObjectURL(file);
@@ -23,17 +17,13 @@ function loadImage(file: File): Promise<HTMLImageElement> {
   });
 }
 
-function renderToCanvas(
-  img: HTMLImageElement,
-  scale: number,
-  enhance: boolean
-): HTMLCanvasElement {
+function renderToCanvas(img, scale, enhance) {
   const w = Math.round(img.naturalWidth * scale);
   const h = Math.round(img.naturalHeight * scale);
   const canvas = document.createElement("canvas");
   canvas.width = w;
   canvas.height = h;
-  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
   if (enhance) {
     ctx.filter = "contrast(1.5) grayscale(1)";
@@ -45,24 +35,16 @@ function renderToCanvas(
   return canvas;
 }
 
-function getImageData(canvas: HTMLCanvasElement): ImageData {
-  const ctx = canvas.getContext("2d", { willReadFrequently: true })!;
+function getImageData(canvas) {
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
   return ctx.getImageData(0, 0, canvas.width, canvas.height);
 }
 
-type Binarizer = ReaderOptions["binarizer"];
-
-// Phase 1: Native BarcodeDetector (Chrome/Edge/Android - uses platform ML)
-async function tryNativeDetector(
-  canvas: HTMLCanvasElement
-): Promise<ScanResult | null> {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const win = window as any;
-  if (!win.BarcodeDetector) return null;
+async function tryNativeDetector(canvas) {
+  if (!window.BarcodeDetector) return null;
 
   try {
-    const NativeDetector = win.BarcodeDetector as typeof BarcodeDetectorPolyfill;
-    const detector = new NativeDetector();
+    const detector = new window.BarcodeDetector();
     const results = await detector.detect(canvas);
     if (results.length > 0 && results[0].rawValue) {
       return {
@@ -77,10 +59,7 @@ async function tryNativeDetector(
   return null;
 }
 
-// Phase 2: ZBar via polyfill
-async function tryZbar(
-  canvas: HTMLCanvasElement
-): Promise<ScanResult | null> {
+async function tryZbar(canvas) {
   try {
     const detector = new BarcodeDetectorPolyfill();
     const results = await detector.detect(canvas);
@@ -97,12 +76,7 @@ async function tryZbar(
   return null;
 }
 
-// Phase 3: ZXing WASM
-async function tryZxing(
-  imageData: ImageData,
-  binarizer: Binarizer,
-  denoise: boolean
-): Promise<ScanResult | null> {
+async function tryZxing(imageData, binarizer, denoise) {
   const results = await readBarcodes(imageData, {
     formats: [],
     tryHarder: true,
@@ -124,10 +98,7 @@ async function tryZxing(
   return null;
 }
 
-// Phase 4: ZXing with error tolerance
-async function tryZxingWithErrors(
-  imageData: ImageData
-): Promise<ScanResult | null> {
+async function tryZxingWithErrors(imageData) {
   const results = await readBarcodes(imageData, {
     formats: [],
     tryHarder: true,
@@ -150,16 +121,11 @@ async function tryZxingWithErrors(
   return null;
 }
 
-export async function scanFromFile(
-  file: File,
-  onProgress?: (msg: string) => void
-): Promise<ScanResult | null> {
+export async function scanFromFile(file, onProgress) {
   const img = await loadImage(file);
   const scales = [1, 2, 3];
 
-  // Phase 1: Native BarcodeDetector (best on Chrome Android/macOS)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  if ((window as any).BarcodeDetector) {
+  if (window.BarcodeDetector) {
     for (const scale of scales) {
       onProgress?.(`Detector nativo (${scale}x)...`);
       const canvas = renderToCanvas(img, scale, false);
@@ -168,7 +134,6 @@ export async function scanFromFile(
     }
   }
 
-  // Phase 2: ZBar
   for (const scale of scales) {
     onProgress?.(`ZBar (${scale}x)...`);
     const canvas = renderToCanvas(img, scale, false);
@@ -182,12 +147,7 @@ export async function scanFromFile(
     }
   }
 
-  // Phase 3: ZXing
-  const binarizers: Binarizer[] = [
-    "LocalAverage",
-    "GlobalHistogram",
-    "FixedThreshold",
-  ];
+  const binarizers = ["LocalAverage", "GlobalHistogram", "FixedThreshold"];
 
   for (const scale of scales) {
     for (const binarizer of binarizers) {
@@ -199,7 +159,6 @@ export async function scanFromFile(
     }
   }
 
-  // Phase 4: ZXing with error tolerance
   onProgress?.("Lectura tolerante a errores...");
   const largeCanvas = renderToCanvas(img, 3, false);
   const partial = await tryZxingWithErrors(getImageData(largeCanvas));
