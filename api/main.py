@@ -1,5 +1,5 @@
+import os
 import zlib
-from io import BytesIO
 
 import cv2
 import numpy as np
@@ -131,3 +131,10 @@ async def scan_barcode(file: UploadFile = File(...)):
 @app.get("/api/health")
 async def health():
     return {"status": "ok"}
+
+
+# Serve static frontend when dist/ directory exists (single-container deploy)
+dist_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist")
+if os.path.isdir(dist_dir):
+    from fastapi.staticfiles import StaticFiles
+    app.mount("/", StaticFiles(directory=dist_dir, html=True), name="static")
