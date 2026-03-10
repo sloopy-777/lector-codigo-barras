@@ -187,12 +187,34 @@ function stopCamera() {
   if (spinner) spinner.style.display = "none";
 }
 
-function captureFrame() {
+function captureViewfinder() {
+  const vw = cameraVideo.videoWidth;
+  const vh = cameraVideo.videoHeight;
+  const cropW = Math.round(vw * 0.80);
+  const cropH = Math.round(cropW / 1.4);
+  const cropX = Math.round((vw - cropW) / 2);
+  const cropY = Math.round((vh - cropH) / 2 - vh * 0.05);
+
+  const canvas = document.createElement("canvas");
+  canvas.width = cropW;
+  canvas.height = cropH;
+  canvas.getContext("2d").drawImage(
+    cameraVideo, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH
+  );
+  return canvas;
+}
+
+function captureFullFrame() {
   const canvas = document.createElement("canvas");
   canvas.width = cameraVideo.videoWidth;
   canvas.height = cameraVideo.videoHeight;
   canvas.getContext("2d").drawImage(cameraVideo, 0, 0);
   return canvas;
+}
+
+async function canvasToFile(canvas, name) {
+  const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.95));
+  return new File([blob], name, { type: "image/jpeg" });
 }
 
 async function captureAndScan() {
@@ -202,16 +224,17 @@ async function captureAndScan() {
   btnCapture.classList.add("capturing");
 
   stopAutoScan();
-
-  const canvas = captureFrame();
-
   showScanning("Analizando captura...");
 
   try {
-    const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.92));
-    const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+    const croppedFile = await canvasToFile(captureViewfinder(), "crop.jpg");
+    let result = await scanFromFile(croppedFile, (msg) => showScanning(msg));
 
-    const result = await scanFromFile(file, (msg) => showScanning(msg));
+    if (!result) {
+      showScanning("Probando frame completo...");
+      const fullFile = await canvasToFile(captureFullFrame(), "full.jpg");
+      result = await scanFromFile(fullFile, (msg) => showScanning(msg));
+    }
 
     if (result) {
       showResult(result.text, result.format);
