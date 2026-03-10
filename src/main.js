@@ -221,32 +221,6 @@ async function toggleTorch() {
   updateTorchButton();
 }
 
-function captureRegion(sx, sy, sw, sh) {
-  const canvas = document.createElement("canvas");
-  canvas.width = sw;
-  canvas.height = sh;
-  canvas.getContext("2d").drawImage(cameraVideo, sx, sy, sw, sh, 0, 0, sw, sh);
-  return canvas;
-}
-
-function captureViewfinder() {
-  const vw = cameraVideo.videoWidth;
-  const vh = cameraVideo.videoHeight;
-  const cropW = Math.round(vw * 0.80);
-  const cropH = Math.round(cropW / 1.4);
-  const cropX = Math.round((vw - cropW) / 2);
-  const cropY = Math.round((vh - cropH) / 2 - vh * 0.05);
-  return captureRegion(cropX, Math.max(0, cropY), cropW, cropH);
-}
-
-function captureFullFrame() {
-  const canvas = document.createElement("canvas");
-  canvas.width = cameraVideo.videoWidth;
-  canvas.height = cameraVideo.videoHeight;
-  canvas.getContext("2d").drawImage(cameraVideo, 0, 0);
-  return canvas;
-}
-
 function sharpen(canvas) {
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
   const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -280,12 +254,36 @@ function sharpen(canvas) {
 }
 
 async function canvasToFile(canvas, name) {
-  const blob = await new Promise((r) => canvas.toBlob(r, "image/jpeg", 0.95));
-  return new File([blob], name, { type: "image/jpeg" });
+  const blob = await new Promise((r) => canvas.toBlob(r, "image/png"));
+  return new File([blob], name, { type: "image/png" });
 }
 
-function delay(ms) {
-  return new Promise((r) => setTimeout(r, ms));
+async function takePhotoViaImageCapture() {
+  const track = getVideoTrack();
+  if (!track || typeof ImageCapture === "undefined") return null;
+
+  try {
+    const capture = new ImageCapture(track);
+    const blob = await capture.takePhoto();
+    return new File([blob], "photo.jpg", { type: blob.type });
+  } catch {
+    return null;
+  }
+}
+
+function captureViewfinderAsFile() {
+  const vw = cameraVideo.videoWidth;
+  const vh = cameraVideo.videoHeight;
+  const cropW = Math.round(vw * 0.80);
+  const cropH = Math.round(cropW / 1.4);
+  const cropX = Math.round((vw - cropW) / 2);
+  const cropY = Math.max(0, Math.round((vh - cropH) / 2 - vh * 0.05));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = cropW;
+  canvas.height = cropH;
+  canvas.getContext("2d").drawImage(cameraVideo, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+  return canvasToFile(canvas, "viewfinder.png");
 }
 
 async function captureAndScan() {
@@ -295,44 +293,45 @@ async function captureAndScan() {
   btnCapture.classList.add("capturing");
 
   stopAutoScan();
-  showScanning("Capturando ráfaga...");
+  showScanning("Capturando foto...");
 
   try {
-    const BURST = 4;
-    const frames = [];
-    for (let i = 0; i < BURST; i++) {
-      frames.push(captureViewfinder());
-      if (i < BURST - 1) await delay(150);
-    }
+    const photoFile = await takePhotoViaImageCapture();
 
-    for (let i = 0; i < frames.length; i++) {
-      showScanning(`Analizando frame ${i + 1}/${frames.length}...`);
-      const file = await canvasToFile(frames[i], `burst-${i}.jpg`);
-      const result = await scanFromFile(file, (msg) => showScanning(`[${i + 1}/${frames.length}] ${msg}`));
+    if (photoFile) {
+      showScanning("Analizando foto del sensor...");
+      const result = await scanFromFile(photoFile, (msg) => showScanning(msg));
       if (result) {
         showResult(result.text, result.format);
         return;
       }
-
-      showScanning(`Frame ${i + 1} con sharpening...`);
-      const sharpened = sharpen(frames[i]);
-      const sharpFile = await canvasToFile(sharpened, `burst-sharp-${i}.jpg`);
-      const sharpResult = await scanFromFile(sharpFile, (msg) => showScanning(`[${i + 1}S/${frames.length}] ${msg}`));
-      if (sharpResult) {
-        showResult(sharpResult.text, sharpResult.format);
-        return;
-      }
     }
 
-    showScanning("Probando frame completo...");
-    const fullFile = await canvasToFile(captureFullFrame(), "full.jpg");
-    const fullResult = await scanFromFile(fullFile, (msg) => showScanning(msg));
-    if (fullResult) {
-      showResult(fullResult.text, fullResult.format);
+    showScanning("Analizando frame de video...");
+    const viewfinderFile = await captureViewfinderAsFile();
+    const vfResult = await scanFromFile(viewfinderFile, (msg) => showScanning(msg));
+    if (vfResult) {
+      showResult(vfResult.text, vfResult.format);
       return;
     }
 
-    showResult("No se detectó ningún código. Intenta con mejor iluminación o acercando más la cámara.");
+    showScanning("Aplicando sharpening...");
+    const vfCanvas = document.createElement("canvas");
+    const vfImg = new Image();
+    const vfUrl = URL.createObjectURL(viewfinderFile);
+    await new Promise((resolve) => { vfImg.onload = resolve; vfImg.src = vfUrl; });
+    URL.revokeObjectURL(vfUrl);
+    vfCanvas.width = vfImg.naturalWidth;
+    vfCanvas.height = vfImg.naturalHeight;
+    vfCanvas.getContext("2d").drawImage(vfImg, 0, 0);
+    const sharpFile = await canvasToFile(sharpen(vfCanvas), "sharp.png");
+    const sharpResult = await scanFromFile(sharpFile, (msg) => showScanning(`[sharp] ${msg}`));
+    if (sharpResult) {
+      showResult(sharpResult.text, sharpResult.format);
+      return;
+    }
+
+    showResult("No se detectó ningún código. Prueba con el botón «Tomar foto» para usar la cámara nativa.");
   } catch (err) {
     console.error("Error al procesar captura:", err);
     showResult("Error al procesar la captura.");
@@ -417,6 +416,29 @@ btnStartCamera.addEventListener("click", startCamera);
 btnStopCamera.addEventListener("click", stopCamera);
 btnCapture.addEventListener("click", captureAndScan);
 $("#btn-torch")?.addEventListener("click", toggleTorch);
+
+const nativeCameraInput = $("#native-camera-input");
+nativeCameraInput.addEventListener("click", () => { nativeCameraInput.value = ""; });
+nativeCameraInput.addEventListener("change", () => {
+  const file = nativeCameraInput.files?.[0];
+  if (file) handleNativePhoto(file);
+});
+
+async function handleNativePhoto(file) {
+  showScanning("Analizando foto...");
+
+  try {
+    const result = await scanFromFile(file, (msg) => showScanning(msg));
+    if (result) {
+      showResult(result.text, result.format);
+    } else {
+      showResult("No se detectó ningún código. Intenta acercando más la cámara al código y con buena iluminación.");
+    }
+  } catch (err) {
+    console.error("Error al procesar foto nativa:", err);
+    showResult("Error al procesar la foto.");
+  }
+}
 
 btnChangeFile.addEventListener("click", () => {
   fileInput.value = "";
