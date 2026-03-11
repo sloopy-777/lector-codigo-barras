@@ -46,16 +46,8 @@
                 <line x1="21" y1="14" x2="21" y2="21"/>
                 <line x1="14" y1="21" x2="21" y2="21"/>
               </svg>
-              <p>Presiona para iniciar la cámara</p>
-              <button id="btn-start-camera" class="btn-primary" type="button">Iniciar cámara</button>
-              <label for="native-camera-input" class="btn-secondary" role="button">
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                  <circle cx="12" cy="13" r="4"/>
-                </svg>
-                Tomar foto
-              </label>
-              <input type="file" id="native-camera-input" accept="image/*" capture="environment" hidden />
+              <p>Apunta la cámara al código de barras</p>
+              <button id="btn-start-camera" class="btn-primary" type="button">Escanear</button>
             </div>
             <div id="camera-viewfinder" class="camera-viewfinder hidden">
               <video id="camera-video" autoplay playsinline muted></video>

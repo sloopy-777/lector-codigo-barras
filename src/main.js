@@ -331,7 +331,7 @@ async function captureAndScan() {
       return;
     }
 
-    showResult("No se detectó ningún código. Prueba con el botón «Tomar foto» para usar la cámara nativa.");
+    showResult("No se detectó ningún código. Acerca más la cámara, mejora la iluminación e intenta de nuevo.");
   } catch (err) {
     console.error("Error al procesar captura:", err);
     showResult("Error al procesar la captura.");
@@ -356,7 +356,7 @@ function startAutoScan() {
     try {
       const results = await detector.detect(cameraVideo);
       if (results.length > 0 && results[0].rawValue) {
-        showResult(results[0].rawValue, results[0].format);
+        captureAndScan();
       }
     } catch {
       // frame not ready
@@ -416,29 +416,6 @@ btnStartCamera.addEventListener("click", startCamera);
 btnStopCamera.addEventListener("click", stopCamera);
 btnCapture.addEventListener("click", captureAndScan);
 $("#btn-torch")?.addEventListener("click", toggleTorch);
-
-const nativeCameraInput = $("#native-camera-input");
-nativeCameraInput.addEventListener("click", () => { nativeCameraInput.value = ""; });
-nativeCameraInput.addEventListener("change", () => {
-  const file = nativeCameraInput.files?.[0];
-  if (file) handleNativePhoto(file);
-});
-
-async function handleNativePhoto(file) {
-  showScanning("Analizando foto...");
-
-  try {
-    const result = await scanFromFile(file, (msg) => showScanning(msg));
-    if (result) {
-      showResult(result.text, result.format);
-    } else {
-      showResult("No se detectó ningún código. Intenta acercando más la cámara al código y con buena iluminación.");
-    }
-  } catch (err) {
-    console.error("Error al procesar foto nativa:", err);
-    showResult("Error al procesar la foto.");
-  }
-}
 
 btnChangeFile.addEventListener("click", () => {
   fileInput.value = "";
